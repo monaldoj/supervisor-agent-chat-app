@@ -39,9 +39,13 @@ setup = [
 
 [tool.uv]
 default-groups = ["dev", "setup"]
-# Avoid very recent releases that may not yet be available through the Databricks Apps
-# PyPI proxy while retaining uv's default highest-compatible-version resolution.
+# Avoid very recent releases while retaining uv's default highest-compatible-version resolution.
 exclude-newer = "30 days"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
 
 
 [project.scripts]

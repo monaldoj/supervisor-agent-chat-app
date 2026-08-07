@@ -37,6 +37,9 @@ resources:
       config:
         command: ["uv", "run", "start-app"]
         env:
+          # Keep the deployment index consistent with the canonical public-PyPI uv.lock.
+          - name: UV_INDEX_URL
+            value: "https://pypi.org/simple"
           - name: MLFLOW_TRACKING_URI
             value: "databricks"
           - name: MLFLOW_REGISTRY_URI
@@ -52,19 +55,6 @@ resources:
           # Supervisor Agent endpoint the backend proxy forwards to (read by agent.py).
           - name: SUPERVISOR_ENDPOINT_NAME
             value: ${var.supervisor_endpoint_name}
-          # Lakebase connection injected from the bound `database` resource below. These put the
-          # chat UI into Persistent mode; the frontend keys on PGDATABASE (see
-          # frontend/packages/db/src/connection-core.ts).
-          - name: PGDATABASE
-            value_from: "database"
-          - name: PGHOST
-            value_from: "database"
-          - name: PGUSER
-            value_from: "database"
-          - name: PGPORT
-            value_from: "database"
-          - name: PGSSLMODE
-            value: "require"
 
       # Resources which this app has access to
       resources:
@@ -79,8 +69,8 @@ resources:
           serving_endpoint:
             name: ${var.supervisor_endpoint_name}
             permission: 'CAN_QUERY'
-        # Lakebase database instance for persistent chat history. Binding it exposes the
-        # PGHOST/PGUSER/PGDATABASE/PGPORT values referenced via `value_from: database` above.
+        # Lakebase database instance for persistent chat history. As the app's first database
+        # resource, Databricks automatically injects PGHOST/PGUSER/PGDATABASE/PGPORT/PGSSLMODE.
         - name: 'database'
           database:
             database_name: databricks_postgres
