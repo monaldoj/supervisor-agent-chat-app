@@ -206,7 +206,7 @@ to skip auto-resolution — see `.env.example`.
 
 ## Deploying to Databricks Apps
 
-This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions, and provisions a **Lakebase instance** (`sa-chat-lakebase-<suffix>`, capacity `CU_1`) bound to the app for persistent chat history.
+This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions, and provisions a **Lakebase instance** (`sa-chat-lakebase-dev` or `sa-chat-lakebase-prod`, capacity `CU_1`) bound to the app for persistent chat history.
 
 ### Required environment variables
 

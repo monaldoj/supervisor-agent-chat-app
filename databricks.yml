@@ -11,7 +11,7 @@ variables:
       BUNDLE_VAR_supervisor_endpoint_name environment variable.
 
   lakebase_instance_name:
-    description: "Base name of the Lakebase database instance used for persistent chat history."
+    description: "Base name of the protected Lakebase instance used for persistent chat history."
     default: "sa-chat-lakebase"
 
   resource_name_suffix:
@@ -28,6 +28,10 @@ resources:
     chatbot_lakebase:
       name: ${var.lakebase_instance_name}-${var.resource_name_suffix}
       capacity: CU_1
+      # Block bundle destroy and any update that would replace this instance. To intentionally
+      # delete it, this protection must first be explicitly removed and deployed.
+      lifecycle:
+        prevent_destroy: true
 
   apps:
     agent_supervisor_chat:
@@ -82,7 +86,7 @@ targets:
     mode: development
     default: true
     variables:
-      resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}
+      resource_name_suffix: "dev"
     # workspace:
     #   host: https://...
 
