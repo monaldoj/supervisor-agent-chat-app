@@ -15,6 +15,7 @@ See 'uv run start-server --help' for available options.
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -30,6 +31,76 @@ from dotenv import load_dotenv
 # Readiness patterns
 BACKEND_READY = [r"Uvicorn running on", r"Application startup complete", r"Started server process"]
 FRONTEND_READY = [r"Server is running on http://localhost"]
+
+
+def resolve_lakebase_for_local() -> None:
+    """Put local runs into Persistent mode when a Lakebase instance is available.
+
+    The chat UI keys on PGDATABASE/POSTGRES_URL to choose Persistent vs Ephemeral mode
+    (see frontend/packages/db/src/connection-core.ts). In a Databricks Apps deployment the
+    platform injects those from the bound `database` resource, so this only matters locally.
+
+    Order of precedence:
+      1. If PGHOST/POSTGRES_URL are already set (explicit config, e.g. via get-pghost.sh), or
+         we are running inside Databricks Apps (DATABRICKS_APP_NAME set), leave env untouched.
+      2. Else, if LAKEBASE_INSTANCE_NAME is set, resolve the instance's read_write_dns via the
+         Databricks CLI and export PGHOST/PGDATABASE/PGPORT -> Persistent mode.
+      3. On any miss (var unset, instance not found, CLI error) -> fall back to Ephemeral mode.
+    """
+    if os.environ.get("DATABRICKS_APP_NAME"):
+        return  # Databricks Apps injects PG* from the bound database resource.
+
+    if os.environ.get("PGHOST") or os.environ.get("POSTGRES_URL"):
+        print("Lakebase: using explicit PGHOST/POSTGRES_URL from environment (Persistent mode).")
+        return
+
+    instance_name = os.environ.get("LAKEBASE_INSTANCE_NAME")
+    if not instance_name:
+        print(
+            "Lakebase: LAKEBASE_INSTANCE_NAME not set and no PGHOST/POSTGRES_URL provided — "
+            "running in Ephemeral mode (chat history is in-memory)."
+        )
+        return
+
+    cmd = ["databricks", "database", "get-database-instance", instance_name, "--output", "json"]
+    if profile := os.environ.get("DATABRICKS_CONFIG_PROFILE"):
+        cmd += ["--profile", profile]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        print(
+            f"Lakebase: could not run Databricks CLI to resolve '{instance_name}' ({e}) — "
+            "falling back to Ephemeral mode."
+        )
+        return
+
+    if result.returncode != 0:
+        print(
+            f"Lakebase: instance '{instance_name}' not found or inaccessible — "
+            f"falling back to Ephemeral mode.\n  {result.stderr.strip()}"
+        )
+        return
+
+    try:
+        pghost = json.loads(result.stdout).get("read_write_dns")
+    except json.JSONDecodeError:
+        pghost = None
+
+    if not pghost:
+        print(
+            f"Lakebase: no read_write_dns on instance '{instance_name}' — "
+            "falling back to Ephemeral mode."
+        )
+        return
+
+    os.environ["PGHOST"] = pghost
+    os.environ.setdefault("PGDATABASE", "databricks_postgres")
+    os.environ.setdefault("PGPORT", "5432")
+    print(
+        f"Lakebase: resolved instance '{instance_name}' (PGHOST={pghost}) — running in "
+        "Persistent mode."
+    )
 
 
 def check_port_available(port: int) -> bool:
@@ -211,6 +282,7 @@ class ProcessManager:
 
     def run(self, backend_args=None):
         load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
+        resolve_lakebase_for_local()
         if not os.environ.get("DATABRICKS_APP_NAME"):
             self.check_ports()
 

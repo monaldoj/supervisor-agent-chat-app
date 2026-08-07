@@ -1,11 +1,38 @@
 bundle:
-  name: agent_openai_agents_sdk
+  name: agent_supervisor_chat
+
+variables:
+  supervisor_endpoint_name:
+    description: |
+      REQUIRED. Name of the Databricks Supervisor Agent (Agent Bricks Multi-Agent Supervisor)
+      serving endpoint that powers the chat UI. There is intentionally no default: every
+      deployment must name its endpoint. Provide it via a target below, a --var flag
+      (`databricks bundle deploy --var supervisor_endpoint_name=<endpoint>`), or the
+      BUNDLE_VAR_supervisor_endpoint_name environment variable.
+
+  lakebase_instance_name:
+    description: "Base name of the Lakebase database instance used for persistent chat history."
+    default: "sa-chat-lakebase"
+
+  resource_name_suffix:
+    description: |
+      Suffix appended to resource names (app, Lakebase instance) to avoid collisions when
+      multiple users deploy to the same workspace. Set per-target below.
 
 resources:
+  database_instances:
+    # Provisioned Lakebase instance that stores persistent chat history. When the app is bound
+    # to this instance (see the `database` resource below) the platform injects PGHOST/PGUSER/etc.,
+    # and the chat UI automatically runs in Persistent mode. Without the binding it falls back to
+    # Ephemeral mode (in-memory history).
+    chatbot_lakebase:
+      name: ${var.lakebase_instance_name}-${var.resource_name_suffix}
+      capacity: CU_1
+
   apps:
-    agent_openai_agents_sdk:
-      name: "agent-openai-agents-sdk"
-      description: "OpenAI Agents SDK agent application"
+    agent_supervisor_chat:
+      name: "agent-supervisor-chat"
+      description: "Supervisor Agent chat application with persistent (Lakebase) chat history"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -22,6 +49,22 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
+          # Supervisor Agent endpoint the backend proxy forwards to (read by agent.py).
+          - name: SUPERVISOR_ENDPOINT_NAME
+            value: ${var.supervisor_endpoint_name}
+          # Lakebase connection injected from the bound `database` resource below. These put the
+          # chat UI into Persistent mode; the frontend keys on PGDATABASE (see
+          # frontend/packages/db/src/connection-core.ts).
+          - name: PGDATABASE
+            value_from: "database"
+          - name: PGHOST
+            value_from: "database"
+          - name: PGUSER
+            value_from: "database"
+          - name: PGPORT
+            value_from: "database"
+          - name: PGSSLMODE
+            value: "require"
 
       # Resources which this app has access to
       resources:
@@ -34,21 +77,32 @@ resources:
         # supervisor, grant the app service principal CAN_QUERY on each of them here too.
         - name: 'supervisor-endpoint'
           serving_endpoint:
-            name: 'mas-67183f47-endpoint'
+            name: ${var.supervisor_endpoint_name}
             permission: 'CAN_QUERY'
+        # Lakebase database instance for persistent chat history. Binding it exposes the
+        # PGHOST/PGUSER/PGDATABASE/PGPORT values referenced via `value_from: database` above.
+        - name: 'database'
+          database:
+            database_name: databricks_postgres
+            instance_name: ${resources.database_instances.chatbot_lakebase.name}
+            permission: CAN_CONNECT_AND_CREATE
 
 targets:
   dev:
     mode: development
     default: true
+    variables:
+      resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}
     # workspace:
     #   host: https://...
 
   prod:
     mode: production
+    variables:
+      resource_name_suffix: "prod"
     # workspace:
     #   host: https://...
     resources:
       apps:
-        agent_openai_agents_sdk:
-          name: agent-openai-agents-sdk
+        agent_supervisor_chat:
+          name: agent-supervisor-chat

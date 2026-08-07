@@ -2,6 +2,9 @@ command: ["uv", "run", "start-app"]
 # databricks apps listen by default on port 8000
 
 env:
+  # Override the workspace package proxy, whose index can reference missing wheel files.
+  - name: UV_INDEX_URL
+    value: "https://pypi.org/simple"
   - name: MLFLOW_TRACKING_URI
     value: "databricks"
   - name: MLFLOW_REGISTRY_URI

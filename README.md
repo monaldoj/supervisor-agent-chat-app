@@ -183,9 +183,62 @@ uv run agent-evaluate
 
 After it completes, open the MLflow UI link for your experiment to inspect results.
 
+## Chat history: Persistent vs Ephemeral mode
+
+The chat UI runs in one of two modes depending on whether a Postgres/Lakebase database is reachable:
+
+- **Persistent mode** — chat history is stored in Lakebase and shown in the sidebar. Active when
+  the database connection env vars (`PGDATABASE`/`PGHOST`, or `POSTGRES_URL`) are present.
+- **Ephemeral mode** — history lives in memory and is lost on restart; an "Ephemeral" badge shows
+  in the UI. This is the fallback when no database is configured.
+
+The frontend detects the mode automatically from the environment — you don't set a flag.
+
+**In a Databricks Apps deployment**, the `databricks.yml` bundle stands up a Lakebase instance and
+binds it to the app, so the platform injects the `PG*` variables and the app runs in **Persistent
+mode** by default.
+
+**Locally**, set `LAKEBASE_INSTANCE_NAME` in `.env` to a Lakebase instance you can access. On
+`uv run start-app` the launcher resolves the instance's host via the Databricks CLI and enters
+Persistent mode; if the instance can't be found (or the var is unset and no `PGHOST`/`POSTGRES_URL`
+is provided), it falls back to **Ephemeral mode**. You can also set the `PG*` variables explicitly
+to skip auto-resolution — see `.env.example`.
+
 ## Deploying to Databricks Apps
 
-This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions.
+This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions, and provisions a **Lakebase instance** (`sa-chat-lakebase-<suffix>`, capacity `CU_1`) bound to the app for persistent chat history.
+
+### Required environment variables
+
+There are two different configuration contexts:
+
+- **Local development (`.env`)**: `DATABRICKS_CONFIG_PROFILE`, `MLFLOW_EXPERIMENT_ID`, and
+  `SUPERVISOR_ENDPOINT_NAME` are read by local commands such as `uv run preflight`. The `.env` file
+  is not used as the deployed app's runtime environment.
+- **Bundle deployment (your shell)**: `BUNDLE_VAR_supervisor_endpoint_name` supplies the required
+  `supervisor_endpoint_name` bundle variable. The bundle injects its value into the deployed app as
+  `SUPERVISOR_ENDPOINT_NAME` when `bundle run` starts the app.
+
+Load `.env`, then reuse the local endpoint name for the bundle:
+
+```bash
+set -a
+source .env
+set +a
+
+export BUNDLE_VAR_supervisor_endpoint_name="$SUPERVISOR_ENDPOINT_NAME"
+```
+
+`DATABRICKS_CONFIG_PROFILE` selects the workspace used by every Databricks CLI command. Always pass
+it with `--profile` to avoid deploying to a different workspace.
+
+The deployed app receives the remaining runtime variables automatically:
+
+- `MLFLOW_TRACKING_URI` and `MLFLOW_REGISTRY_URI` come from the app configuration.
+- `MLFLOW_EXPERIMENT_ID` comes from the bound experiment resource.
+- `PGHOST`, `PGUSER`, `PGDATABASE`, and `PGPORT` come from the bound Lakebase resource.
+
+Do not manually copy these deployed values into `.env`.
 
 > **`app.yaml` vs `databricks.yml`**: `app.yaml` is used when deploying via `databricks apps deploy` (manual path). When deploying via DABs (`databricks bundle deploy`), the `config:` section in `databricks.yml` takes precedence. If you change environment variables or the start command, update `databricks.yml` — that's what DABs reads.
 
@@ -204,24 +257,34 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
    Catch any configuration errors before deploying:
 
    ```bash
-   databricks bundle validate
+   databricks bundle validate --profile "$DATABRICKS_CONFIG_PROFILE"
    ```
 
 3. **Deploy the bundle**
 
-   This uploads your code and configures resources (MLflow experiment, serving endpoints, etc.) defined in `databricks.yml`:
+   This configures the resources (MLflow experiment, serving endpoint permission, Lakebase instance,
+   etc.) defined in `databricks.yml`. The exported `BUNDLE_VAR_supervisor_endpoint_name` is resolved
+   into the app configuration:
 
    ```bash
-   databricks bundle deploy
+   databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
    ```
+
+   > **First deploy provisions Lakebase**, which takes ~5–10 minutes and incurs cost (~$0.70/hr for `CU_1`). The app becomes reachable once the instance is ready.
 
 4. **Start or restart the app**
 
+   Upload the source and start the app with the bundle-generated runtime environment:
+
    ```bash
-   databricks bundle run agent_openai_agents_sdk
+   databricks bundle run agent_supervisor_chat \
+     --profile "$DATABRICKS_CONFIG_PROFILE"
    ```
 
-   > **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code.
+   > **Important:** `bundle deploy` alone does not apply the runtime environment or start the new
+   > source deployment. `bundle run` is required. Keep
+   > `BUNDLE_VAR_supervisor_endpoint_name` exported for both commands; restarting from the Apps UI
+   > does not resolve bundle variables.
 
    To grant access to additional resources (serving endpoints, genie spaces, UC Functions, Vector Search), add them to `databricks.yml` and redeploy. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
@@ -292,7 +355,19 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
      }'
    ```
 
-For future updates, run `databricks bundle deploy` and `databricks bundle run agent_openai_agents_sdk` to redeploy.
+For future updates, load `.env`, export `BUNDLE_VAR_supervisor_endpoint_name`, then run both
+deployment commands:
+
+```bash
+set -a
+source .env
+set +a
+export BUNDLE_VAR_supervisor_endpoint_name="$SUPERVISOR_ENDPOINT_NAME"
+
+databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
+databricks bundle run agent_supervisor_chat \
+  --profile "$DATABRICKS_CONFIG_PROFILE"
+```
 
 ### Common Issues
 
@@ -302,15 +377,21 @@ For future updates, run `databricks bundle deploy` and `databricks bundle run ag
 
   ```bash
   # 1. Get the existing app's config (note the budget_policy_id if present)
-  databricks apps get <app-name> --output json | jq '{name, budget_policy_id, description}'
+  databricks apps get <app-name> --output json \
+    --profile "$DATABRICKS_CONFIG_PROFILE" |
+    jq '{name, budget_policy_id, description}'
 
   # 2. Update databricks.yml to include budget_policy_id if it was returned above
 
   # 3. Bind the existing app to your bundle
-  databricks bundle deployment bind agent_openai_agents_sdk <app-name> --auto-approve
+  databricks bundle deployment bind agent_supervisor_chat <app-name> \
+    --auto-approve \
+    --profile "$DATABRICKS_CONFIG_PROFILE"
 
-  # 4. Deploy
-  databricks bundle deploy
+  # 4. Deploy and start (after exporting BUNDLE_VAR_supervisor_endpoint_name)
+  databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
+  databricks bundle run agent_supervisor_chat \
+    --profile "$DATABRICKS_CONFIG_PROFILE"
   ```
 
   Alternatively, delete the existing app and deploy fresh: `databricks apps delete <app-name>` (this permanently removes the app's URL and service principal).
@@ -321,7 +402,15 @@ For future updates, run `databricks bundle deploy` and `databricks bundle run ag
 
 - **App is running old code after `databricks bundle deploy`**
 
-  `bundle deploy` only uploads files and configures resources. You must run `databricks bundle run agent_openai_agents_sdk` to actually start/restart the app with the new code.
+  `bundle deploy` configures resources, but `bundle run` uploads and starts the source deployment.
+  Run both commands shown above.
+
+- **Startup fails with `SUPERVISOR_ENDPOINT_NAME is not set`**
+
+  Export `BUNDLE_VAR_supervisor_endpoint_name` before both `bundle deploy` and `bundle run`. The
+  similarly named `SUPERVISOR_ENDPOINT_NAME` in `.env` is only loaded automatically by local
+  application commands. Avoid restarting the app from the UI when its configuration depends on
+  bundle variables.
 
 ### FAQ
 

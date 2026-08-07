@@ -29,17 +29,32 @@ export function getSchemaName(): string {
  * Get database configuration from environment variables
  */
 export function getDatabaseConfigFromEnv(): DatabaseConfig | null {
-  const pgHost = process.env.PGHOST;
-  const pgPort = process.env.PGPORT || '5432';
+  const rawHost = process.env.PGHOST;
   const pgDatabase = process.env.PGDATABASE;
   const pgSSLMode = process.env.PGSSLMODE || 'require';
 
-  if (!pgHost || !pgDatabase) {
+  // Sanitize PGHOST: values coming from `read_write_dns` (or a hand-edited .env)
+  // may carry a protocol, a trailing slash, surrounding whitespace, or an
+  // embedded port. Any of those would produce a connection string that
+  // `postgres()` rejects with a bare "Invalid URL". Normalize to a bare host
+  // and lift an embedded port out into PGPORT.
+  let host = rawHost
+    ?.trim()
+    .replace(/^[a-z]+:\/\//i, '')
+    .replace(/\/+$/, '');
+  let embeddedPort: string | undefined;
+  if (host?.includes(':')) {
+    [host, embeddedPort] = host.split(':', 2);
+  }
+
+  const pgPort = process.env.PGPORT || embeddedPort || '5432';
+
+  if (!host || !pgDatabase) {
     return null;
   }
 
   return {
-    host: pgHost,
+    host,
     port: pgPort,
     database: pgDatabase,
     sslMode: pgSSLMode,

@@ -6,7 +6,10 @@ readme = "README.md"
 authors = [
     { name = "Agent Developer", email = "developer@example.com" }
 ]
-requires-python = ">=3.11"
+# Pinned to 3.11 to match the Databricks Apps base runtime (Ubuntu 22.04, CPython 3.11).
+# This also collapses the universal lock's dual <3.12 / >=3.12 dependency branches to one,
+# shrinking the set of wheels the Apps build must fetch from the pypi proxy.
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
@@ -36,6 +39,9 @@ setup = [
 
 [tool.uv]
 default-groups = ["dev", "setup"]
+# Avoid very recent releases that may not yet be available through the Databricks Apps
+# PyPI proxy while retaining uv's default highest-compatible-version resolution.
+exclude-newer = "30 days"
 
 
 [project.scripts]

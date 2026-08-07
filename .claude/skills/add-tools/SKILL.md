@@ -35,7 +35,7 @@ agent = Agent(
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk:
+    agent_supervisor_chat:
       resources:
         - name: 'my_genie_space'
           genie_space:
@@ -70,7 +70,7 @@ Declare the target app as an `app` resource in `databricks.yml` — the bundle g
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk:
+    agent_supervisor_chat:
       resources:
         - name: 'mcp_server'
           app:

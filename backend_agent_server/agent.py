@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Generator
 from uuid import uuid4
 
@@ -23,7 +24,16 @@ logger = logging.getLogger(__name__)
 NAME = 'agent-supervisor-chat'
 # Databricks Supervisor Agent (Agent Bricks Multi-Agent Supervisor) serving endpoint.
 # The endpoint runs the agent loop and tool selection server-side, so this app only proxies to it.
-ENDPOINT = 'mas-67183f47-endpoint'
+# The endpoint name is required and supplied via the SUPERVISOR_ENDPOINT_NAME env var. In a
+# Databricks Apps deployment the DAB injects it from the `supervisor_endpoint_name` bundle
+# variable; for local runs set it in .env.
+ENDPOINT = os.environ.get("SUPERVISOR_ENDPOINT_NAME")
+if not ENDPOINT:
+    raise RuntimeError(
+        "SUPERVISOR_ENDPOINT_NAME is not set. Set it in .env for local runs, or provide the "
+        "`supervisor_endpoint_name` bundle variable when deploying (databricks bundle deploy "
+        "--var supervisor_endpoint_name=<endpoint>)."
+    )
 
 # MCP tools approved automatically, without prompting the user. The endpoint pauses on an
 # `mcp_approval_request` for every MCP tool call; for read-only tools like web search the prompt is

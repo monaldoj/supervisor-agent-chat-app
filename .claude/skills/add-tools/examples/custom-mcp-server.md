@@ -30,7 +30,7 @@ Add the target app as a resource:
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk:
+    agent_supervisor_chat:
       resources:
         - name: 'mcp_server'
           app:

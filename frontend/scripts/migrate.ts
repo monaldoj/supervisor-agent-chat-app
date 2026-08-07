@@ -91,12 +91,23 @@ async function main() {
     console.log('error', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('❌ Database migration failed:', errorMessage);
-    process.exit(1);
+    console.warn(
+      '⚠️ Continuing without persistence — the app will run in ephemeral mode. ' +
+        'Check PGHOST/PGDATABASE/PGPORT (or POSTGRES_URL) and Databricks auth if you ' +
+        'expected persistent chat history.',
+    );
+    // Non-fatal: a DB problem must not abort the build/startup. The frontend
+    // independently falls back to ephemeral mode when it can't reach the DB.
+    process.exit(0);
   }
 }
 
 main().catch((error) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
   console.error('❌ Migration script failed:', errorMessage);
-  process.exit(1);
+  console.warn(
+    '⚠️ Continuing without persistence — the app will run in ephemeral mode.',
+  );
+  // Non-fatal (see above): degrade to ephemeral rather than failing the build.
+  process.exit(0);
 });

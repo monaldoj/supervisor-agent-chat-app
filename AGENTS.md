@@ -130,7 +130,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Setup | `uv run quickstart` |
 | Discover tools | `uv run discover-tools` |
 | Run locally | `uv run start-app` |
-| Deploy | `databricks bundle deploy && databricks bundle run agent_openai_agents_sdk` |
+| Deploy | `databricks bundle deploy && databricks bundle run agent_supervisor_chat` |
 | View logs | `databricks apps logs <app-name> --follow` |
 
 ---
