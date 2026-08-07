@@ -12,7 +12,7 @@ from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
 )
 
-from agent_server.utils import get_session_id, get_user_workspace_client
+from backend_agent_server.utils import get_session_id, get_user_workspace_client
 
 mlflow.openai.autolog()
 

@@ -137,7 +137,7 @@ orchestration server-side. To change the agent's tools, instructions, or sub-age
 Multi-Agent Supervisor in the Databricks UI — see the
 [Multi-Agent Supervisor documentation](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor).
 
-To point this app at a different endpoint, change `ENDPOINT` in `agent_server/agent.py` and update
+To point this app at a different endpoint, change `ENDPOINT` in `backend_agent_server/agent.py` and update
 the `supervisor-endpoint` resource in `databricks.yml`.
 
 ### Tool approvals
@@ -145,7 +145,7 @@ the `supervisor-endpoint` resource in `databricks.yml`.
 The endpoint pauses before every MCP tool call and asks for approval. The chat UI renders these as
 an **Allow / Deny** prompt, and approving sends the answer back so the tool runs.
 
-Tools named in `AUTO_APPROVED_TOOLS` (in `agent_server/agent.py`) skip that prompt — the app
+Tools named in `AUTO_APPROVED_TOOLS` (in `backend_agent_server/agent.py`) skip that prompt — the app
 approves them itself and shows them as an ordinary tool call. `web_search` is auto-approved by
 default because it is read-only. Any tool not listed still requires the user to click Allow, so add
 a tool only if it is safe to run unattended.
@@ -225,7 +225,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
    To grant access to additional resources (serving endpoints, genie spaces, UC Functions, Vector Search), add them to `databricks.yml` and redeploy. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
-   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
+   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `backend_agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
 5. **Query your agent hosted on Databricks Apps**
 

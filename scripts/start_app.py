@@ -136,10 +136,10 @@ class ProcessManager:
             self.failed.set()
 
     def clone_frontend_if_needed(self):
-        if Path("e2e-chatbot-app-next").exists():
+        if Path("frontend").exists():
             return True
 
-        print("Cloning e2e-chatbot-app-next...")
+        print("Cloning frontend (databricks/app-templates: e2e-chatbot-app-next)...")
         for url in [
             "https://github.com/databricks/app-templates.git",
             "git@github.com:databricks/app-templates.git",
@@ -165,7 +165,7 @@ class ProcessManager:
             cwd="temp-app-templates",
             check=True,
         )
-        Path("temp-app-templates/e2e-chatbot-app-next").rename("e2e-chatbot-app-next")
+        Path("temp-app-templates/e2e-chatbot-app-next").rename("frontend")
         shutil.rmtree("temp-app-templates", ignore_errors=True)
         return True
 
@@ -240,7 +240,7 @@ class ProcessManager:
 
             if not self.no_ui:
                 # Setup and start frontend
-                frontend_dir = Path("e2e-chatbot-app-next")
+                frontend_dir = Path("frontend")
                 for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
                     print(f"Running npm {desc}...")
                     result = subprocess.run(

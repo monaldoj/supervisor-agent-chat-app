@@ -23,7 +23,7 @@ load_dotenv(dotenv_path=".env", override=True)
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 
 # need to import agent for our @invoke-registered function to be found
-from agent_server import agent  # noqa: F401
+from backend_agent_server import agent  # noqa: F401
 
 # Create your evaluation dataset
 # Refer to documentation for evaluations:

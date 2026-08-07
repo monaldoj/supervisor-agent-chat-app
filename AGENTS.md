@@ -139,9 +139,9 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 
 | File | Purpose |
 |------|---------|
-| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
-| `agent_server/start_server.py` | FastAPI server + MLflow setup |
-| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
+| `backend_agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
+| `backend_agent_server/start_server.py` | FastAPI server + MLflow setup |
+| `backend_agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
 | `databricks.yml` | Bundle config & resource permissions |
 | `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (synced from `.scripts/source/.github/workflows/`) |
 | `scripts/quickstart.py` | One-command setup script |
