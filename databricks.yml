@@ -10,6 +10,11 @@ variables:
       (`databricks bundle deploy --var supervisor_endpoint_name=<endpoint>`), or the
       BUNDLE_VAR_supervisor_endpoint_name environment variable.
 
+  experiment_id:
+    description: |
+      REQUIRED. MLflow experiment associated with the Supervisor Agent in the target workspace.
+      Provide it with the BUNDLE_VAR_experiment_id environment variable or a --var flag.
+
   lakebase_instance_name:
     description: "Base name of the protected Lakebase instance used for persistent chat history."
     default: "sa-chat-lakebase"
@@ -64,7 +69,7 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "2451180342646156"
+            experiment_id: ${var.experiment_id}
             permission: 'CAN_MANAGE'
         # The Supervisor Agent endpoint that powers the chat UI.
         # NOTE: the supervisor orchestrates other agents. If you add agent endpoints to the
@@ -105,5 +110,5 @@ targets:
     mode: development
     variables:
       resource_name_suffix: "free"
-    workspace:
-      host: https://dbc-4338216a-6311.cloud.databricks.com/
+    # workspace:
+    #   host: https://...

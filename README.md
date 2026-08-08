@@ -206,91 +206,79 @@ to skip auto-resolution — see `.env.example`.
 
 ## Deploying to Databricks Apps
 
-This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions, and provisions a **Lakebase instance** (`sa-chat-lakebase-dev` or `sa-chat-lakebase-prod`, capacity `CU_1`) bound to the app for persistent chat history.
+This template deploys with [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/).
+Each bundle target represents a separate deployment environment and can point to a different
+workspace. The bundle creates or updates the app, grants access to the selected Supervisor endpoint
+and MLflow experiment, and provisions a protected Lakebase instance named
+`sa-chat-lakebase-<target>` for persistent chat history.
 
-### Required environment variables
+### Deployment inputs
 
-There are two different configuration contexts:
+Set these values in the shell that runs the bundle commands:
 
-- **Local development (`.env`)**: `DATABRICKS_CONFIG_PROFILE`, `MLFLOW_EXPERIMENT_ID`, and
-  `SUPERVISOR_ENDPOINT_NAME` are read by local commands such as `uv run preflight`. The `.env` file
-  is not used as the deployed app's runtime environment.
-- **Bundle deployment (your shell)**: `BUNDLE_VAR_supervisor_endpoint_name` supplies the required
-  `supervisor_endpoint_name` bundle variable. The bundle injects its value into the deployed app as
-  `SUPERVISOR_ENDPOINT_NAME` when `bundle run` starts the app.
+- `TARGET`: the bundle target, such as `dev`, `prod`, or `free`.
+- `DATABRICKS_CONFIG_PROFILE`: a CLI profile authenticated to that target's workspace.
+- `BUNDLE_VAR_supervisor_endpoint_name`: the Supervisor Agent serving endpoint in that workspace.
+- `BUNDLE_VAR_experiment_id`: the MLflow experiment associated with that Supervisor Agent.
 
-Load `.env`, then reuse the local endpoint name for the bundle:
+Resource IDs and endpoint names are workspace-specific. Do not reuse an experiment ID from another
+workspace; doing so produces a `Node ID ... does not exist` error.
 
 ```bash
+# Load DATABRICKS_CONFIG_PROFILE and SUPERVISOR_ENDPOINT_NAME used for local development.
 set -a
 source .env
 set +a
 
+TARGET="dev" # Change to prod or free when needed
 export BUNDLE_VAR_supervisor_endpoint_name="$SUPERVISOR_ENDPOINT_NAME"
+export BUNDLE_VAR_experiment_id="<supervisor-experiment-id>"
 ```
 
-`DATABRICKS_CONFIG_PROFILE` selects the workspace used by every Databricks CLI command. Always pass
-it with `--profile` to avoid deploying to a different workspace.
+The local `MLFLOW_EXPERIMENT_ID` in `.env` is used for local traces. The remote app instead receives
+`BUNDLE_VAR_experiment_id` through its bound experiment resource.
 
-The deployed app receives the remaining runtime variables automatically:
+### Validate, deploy, and start
 
-- `MLFLOW_TRACKING_URI` and `MLFLOW_REGISTRY_URI` come from the app configuration.
-- `MLFLOW_EXPERIMENT_ID` comes from the bound experiment resource.
-- `PGHOST`, `PGUSER`, `PGDATABASE`, and `PGPORT` come from the bound Lakebase resource.
+Always pass the same `--target` and `--profile` to every command:
 
-Do not manually copy these deployed values into `.env`.
+```bash
+# Optional local smoke test
+uv run preflight
 
-> **`app.yaml` vs `databricks.yml`**: `app.yaml` is used when deploying via `databricks apps deploy` (manual path). When deploying via DABs (`databricks bundle deploy`), the `config:` section in `databricks.yml` takes precedence. If you change environment variables or the start command, update `databricks.yml` — that's what DABs reads.
+# Validate substitutions and the selected workspace
+databricks bundle validate \
+  --target "$TARGET" \
+  --profile "$DATABRICKS_CONFIG_PROFILE"
 
-Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
+# Configure bundle resources
+databricks bundle deploy \
+  --target "$TARGET" \
+  --profile "$DATABRICKS_CONFIG_PROFILE"
 
-1. **Run the pre-flight check**
+# Upload the source and start or restart the app
+databricks bundle run agent_supervisor_chat \
+  --target "$TARGET" \
+  --profile "$DATABRICKS_CONFIG_PROFILE"
+```
 
-   Start the agent locally, send a test request, and verify the response to catch configuration and code errors early:
+`bundle deploy` does not start the new source deployment; `bundle run` is required. The first
+deployment can take 5–10 minutes while Lakebase is provisioned. Lakebase uses `CU_1` and incurs
+cost. Its bundle resource has `prevent_destroy: true`, so bundle operations that would destroy or
+replace it fail instead.
 
-   ```bash
-   uv run preflight
-   ```
+The deployed app receives `MLFLOW_EXPERIMENT_ID` from the bound experiment and receives
+`PGHOST`, `PGUSER`, `PGDATABASE`, `PGPORT`, and `PGSSLMODE` automatically from the bound Lakebase
+resource.
 
-2. **Validate the bundle configuration**
+> **`app.yaml` vs `databricks.yml`**: DAB deployments use the app `config:` in `databricks.yml`.
+> Keep the command and runtime environment there. `app.yaml` is used by direct
+> `databricks apps deploy` workflows.
 
-   Catch any configuration errors before deploying:
+To grant access to additional resources, add them to `databricks.yml` and redeploy. See the
+[Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
-   ```bash
-   databricks bundle validate --profile "$DATABRICKS_CONFIG_PROFILE"
-   ```
-
-3. **Deploy the bundle**
-
-   This configures the resources (MLflow experiment, serving endpoint permission, Lakebase instance,
-   etc.) defined in `databricks.yml`. The exported `BUNDLE_VAR_supervisor_endpoint_name` is resolved
-   into the app configuration:
-
-   ```bash
-   databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
-   ```
-
-   > **First deploy provisions Lakebase**, which takes ~5–10 minutes and incurs cost (~$0.70/hr for `CU_1`). The app becomes reachable once the instance is ready.
-
-4. **Start or restart the app**
-
-   Upload the source and start the app with the bundle-generated runtime environment:
-
-   ```bash
-   databricks bundle run agent_supervisor_chat \
-     --profile "$DATABRICKS_CONFIG_PROFILE"
-   ```
-
-   > **Important:** `bundle deploy` alone does not apply the runtime environment or start the new
-   > source deployment. `bundle run` is required. Keep
-   > `BUNDLE_VAR_supervisor_endpoint_name` exported for both commands; restarting from the Apps UI
-   > does not resolve bundle variables.
-
-   To grant access to additional resources (serving endpoints, genie spaces, UC Functions, Vector Search), add them to `databricks.yml` and redeploy. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
-
-   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `backend_agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
-
-5. **Query your agent hosted on Databricks Apps**
+### Query the deployed app
 
    You must use a Databricks OAuth token to query agents hosted on Databricks Apps. See [Query an agent](https://docs.databricks.com/aws/en/generative-ai/agent-framework/query-agent) for full details.
 
@@ -355,21 +343,37 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
      }'
    ```
 
-For future updates, load `.env`, export `BUNDLE_VAR_supervisor_endpoint_name`, then run both
-deployment commands:
+For future updates, reload the environment and run both bundle commands with the same target:
 
 ```bash
 set -a
 source .env
 set +a
-export BUNDLE_VAR_supervisor_endpoint_name="$SUPERVISOR_ENDPOINT_NAME"
 
-databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
+export BUNDLE_VAR_supervisor_endpoint_name="$SUPERVISOR_ENDPOINT_NAME"
+export BUNDLE_VAR_experiment_id="<supervisor-experiment-id>"
+TARGET="dev"
+
+databricks bundle deploy \
+  --target "$TARGET" \
+  --profile "$DATABRICKS_CONFIG_PROFILE"
 databricks bundle run agent_supervisor_chat \
+  --target "$TARGET" \
   --profile "$DATABRICKS_CONFIG_PROFILE"
 ```
 
 ### Common Issues
+
+- **`Node ID <id> does not exist` while creating the app**
+
+  The exported `BUNDLE_VAR_experiment_id` belongs to another workspace or was deleted. Set it to the
+  Supervisor Agent's experiment ID in the workspace selected by `TARGET` and
+  `DATABRICKS_CONFIG_PROFILE`.
+
+- **A required bundle variable is not set**
+
+  Export both `BUNDLE_VAR_supervisor_endpoint_name` and `BUNDLE_VAR_experiment_id` in the same shell
+  before running `validate`, `deploy`, or `run`.
 
 - **`databricks bundle deploy` fails with "An app with the same name already exists"**
 
@@ -386,11 +390,15 @@ databricks bundle run agent_supervisor_chat \
   # 3. Bind the existing app to your bundle
   databricks bundle deployment bind agent_supervisor_chat <app-name> \
     --auto-approve \
+    --target "$TARGET" \
     --profile "$DATABRICKS_CONFIG_PROFILE"
 
-  # 4. Deploy and start (after exporting BUNDLE_VAR_supervisor_endpoint_name)
-  databricks bundle deploy --profile "$DATABRICKS_CONFIG_PROFILE"
+  # 4. Deploy and start with both BUNDLE_VAR values exported
+  databricks bundle deploy \
+    --target "$TARGET" \
+    --profile "$DATABRICKS_CONFIG_PROFILE"
   databricks bundle run agent_supervisor_chat \
+    --target "$TARGET" \
     --profile "$DATABRICKS_CONFIG_PROFILE"
   ```
 
@@ -403,14 +411,12 @@ databricks bundle run agent_supervisor_chat \
 - **App is running old code after `databricks bundle deploy`**
 
   `bundle deploy` configures resources, but `bundle run` uploads and starts the source deployment.
-  Run both commands shown above.
+  Run both commands with the same `--target`.
 
 - **Startup fails with `SUPERVISOR_ENDPOINT_NAME is not set`**
 
-  Export `BUNDLE_VAR_supervisor_endpoint_name` before both `bundle deploy` and `bundle run`. The
-  similarly named `SUPERVISOR_ENDPOINT_NAME` in `.env` is only loaded automatically by local
-  application commands. Avoid restarting the app from the UI when its configuration depends on
-  bundle variables.
+  Export `BUNDLE_VAR_supervisor_endpoint_name` and `BUNDLE_VAR_experiment_id` before both deployment
+  stages. Avoid restarting the app from the UI when its configuration depends on bundle variables.
 
 ### FAQ
 
