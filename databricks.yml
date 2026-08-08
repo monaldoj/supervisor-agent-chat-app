@@ -100,3 +100,10 @@ targets:
       apps:
         agent_supervisor_chat:
           name: agent-supervisor-chat
+
+  free:
+    mode: development
+    variables:
+      resource_name_suffix: "free"
+    workspace:
+      host: https://dbc-4338216a-6311.cloud.databricks.com/
